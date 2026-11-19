@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {defaults,packing,estimate,createRequest,requestText,resultTemplate,validateInput,validateResult} from '../core.mjs';
+import {defaults,savedPreferences,freshForm,packing,estimate,createRequest,requestText,resultTemplate,validateInput,validateResult} from '../core.mjs';
 const data={...defaults,productName:'Mitutoyo IMP-30MX',supplierUrl:'https://example.com/product',sku:'test-01',weight:'320',length:'19.7',width:'10.6',height:'3.6',purchase:'47000',shipping:'4648',exchange:'159.34'};
 test('each physical dimension uses factor once; unknown is not zero',()=>{assert.deepEqual(packing(data),{weight:384,length:23.64,width:12.72,height:4.32});assert.equal(packing(defaults).weight,null);});
 test('missing shipping/exchange never produces a final estimate',()=>{assert.equal(estimate({...data,shipping:''}),null);assert.equal(estimate({...data,exchange:'0'}),null);assert.equal(estimate({...data,target:'99'}),null);});
@@ -10,3 +10,8 @@ test('prompt preserves draft-only workflow and actual/packed distinction',()=>{c
 function valid(){return {...resultTemplate(r),savedAt:'2026-11-19T01:00:00Z',draftUrl:'https://sellsta.jp/listings/123/edit',title:'Mitutoyo IMP-30MX',categoryId:'41938',sellingPriceUsd:650,purchaseJpy:47000,shippingJpy:4648,profitJpyExcludingRefund:10973,profitMarginPercent:10.59,packing:{weightG:384,lengthCm:23.64,widthCm:12.72,heightCm:4.32},checks:Object.fromEntries(Object.keys(resultTemplate(r).checks).map(k=>[k,true])),evidence:[{url:'https://www.mitutoyo.co.jp/',note:'公式仕様を確認'}]};}
 test('valid saved report passes; placeholder and stale reports fail',()=>{assert.deepEqual(validateResult(valid(),r),[]);assert.ok(validateResult(resultTemplate(r),r).length);assert.ok(validateResult({...valid(),requestId:'other'},r).length);assert.ok(validateResult({...valid(),savedAt:'2020-01-01'},r).length);});
 test('completion requires margin, exact domain and checks',()=>{for(const edit of [{profitMarginPercent:9.99},{draftUrl:'https://sellsta.jp.attacker.test/listings/123/edit'},{checks:{}},{unconfirmed:['寸法未確認']},{shippingJpy:null},{evidence:[]},{sellingPriceUsd:0}])assert.ok(validateResult({...valid(),...edit},r).length);});
+
+test('URL alone creates a research request',()=>{const d={...defaults,supplierUrl:'https://example.com/product'};assert.deepEqual(validateInput(d),[]);assert.match(requestText(createRequest(d,'url-only')),/まず仕入れ先URLを開き/);});
+test('only saved common preferences carry into the next product',()=>{const saved=savedPreferences({...data,target:'12',notes:'追加条件'});const current=freshForm(saved);current.target='25';current.weight='999';const next=freshForm(saved);assert.equal(next.target,'12');assert.equal(next.weight,'');assert.equal(next.productName,'');assert.equal(next.supplierUrl,'');assert.equal(next.purchase,'');assert.equal(next.notes,'追加条件');assert.equal(freshForm(savedPreferences(current)).target,'25');});
+
+test('ambiguous categories require user choice',()=>{assert.match(requestText(r),/ユーザーに選択を求める/);});
